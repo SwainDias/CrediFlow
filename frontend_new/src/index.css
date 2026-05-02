@@ -1,0 +1,247 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   CrediFlow AI — Stripe-inspired design system
+   All colors HSL. Tokens drive every component.
+   ============================================================ */
+
+@layer base {
+  :root {
+    /* Surfaces */
+    --background: 0 0% 100%;
+    --foreground: 211 78% 11%;            /* #061b31 deep navy */
+
+    --card: 0 0% 100%;
+    --card-foreground: 211 78% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 211 78% 11%;
+
+    /* Brand */
+    --primary: 247 98% 61%;               /* #533afd Stripe purple */
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 247 64% 52%;         /* #4434d4 */
+    --primary-deep: 243 53% 36%;          /* #2e2b8c */
+    --primary-soft: 240 86% 85%;          /* #b9b9f9 */
+    --primary-mid: 242 98% 68%;           /* #665efd */
+
+    --brand-dark: 238 50% 22%;            /* #1c1e54 */
+    --brand-darker: 211 64% 14%;          /* #0d253d */
+
+    /* Neutral scale */
+    --heading: 211 78% 11%;               /* #061b31 */
+    --label: 217 33% 24%;                 /* #273951 */
+    --body: 217 16% 47%;                  /* #64748d */
+
+    /* Semantic */
+    --secondary: 214 50% 96%;             /* light surface */
+    --secondary-foreground: 217 33% 24%;
+
+    --muted: 214 50% 97%;
+    --muted-foreground: 217 16% 47%;
+
+    --accent: 240 100% 97%;               /* faint purple wash */
+    --accent-foreground: 247 98% 61%;
+
+    --destructive: 343 83% 53%;           /* ruby #ea2261 */
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 79% 41%;               /* #15be53 */
+    --success-foreground: 142 78% 30%;    /* #108c3d */
+
+    --warning: 32 58% 38%;                /* lemon #9b6829 */
+
+    --magenta: 304 92% 70%;               /* #f96bee */
+    --magenta-soft: 322 100% 92%;         /* #ffd7ef */
+    --ruby: 343 83% 53%;                  /* #ea2261 */
+
+    /* Borders & inputs */
+    --border: 213 50% 93%;                /* #e5edf5 */
+    --border-strong: 211 78% 11%;
+    --border-purple: 240 86% 85%;
+    --border-soft-purple: 235 90% 92%;    /* #d6d9fc */
+    --border-dashed: 246 60% 42%;         /* #362baa */
+
+    --input: 213 50% 93%;
+    --ring: 247 98% 61%;
+
+    --radius: 0.375rem;                   /* 6px workhorse */
+
+    /* Shadows — blue-tinted, multi-layer signature */
+    --shadow-ambient: 0 3px 6px hsl(0 0% 9% / 0.06);
+    --shadow-soft: 0 15px 35px hsl(0 0% 9% / 0.08);
+    --shadow-elevated: 0 30px 45px -30px hsl(240 30% 28% / 0.25), 0 18px 36px -18px hsl(0 0% 0% / 0.10);
+    --shadow-deep: 0 14px 21px -14px hsl(240 86% 8% / 0.25), 0 8px 17px -8px hsl(0 0% 0% / 0.10);
+    --shadow-top-sticky: 0 1px 0 hsl(207 100% 22% / 0.08);
+
+    /* Gradients */
+    --gradient-ruby-magenta: linear-gradient(135deg, hsl(var(--ruby)), hsl(var(--magenta)));
+    --gradient-brand: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-mid)));
+    --gradient-dark: linear-gradient(180deg, hsl(var(--brand-dark)), hsl(var(--brand-darker)));
+
+    /* Sidebar (kept for shadcn compatibility) */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 211 78% 11%;
+    --sidebar-primary: 247 98% 61%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 213 50% 96%;
+    --sidebar-accent-foreground: 211 78% 11%;
+    --sidebar-border: 213 50% 93%;
+    --sidebar-ring: 247 98% 61%;
+  }
+
+  .dark {
+    --background: 238 50% 10%;
+    --foreground: 0 0% 98%;
+    --card: 238 50% 14%;
+    --card-foreground: 0 0% 98%;
+    --popover: 238 50% 14%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 247 98% 68%;
+    --primary-foreground: 238 50% 10%;
+    --secondary: 238 40% 20%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 238 40% 20%;
+    --muted-foreground: 217 16% 70%;
+    --accent: 238 40% 22%;
+    --accent-foreground: 0 0% 98%;
+    --border: 238 40% 22%;
+    --input: 238 40% 22%;
+    --ring: 247 98% 68%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', 'SF Pro Display', system-ui, -apple-system, sans-serif;
+    font-weight: 300;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    color: hsl(var(--heading));
+    font-weight: 300;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  /* Tabular numerals for any element marked .tnum */
+  .tnum, table, .font-mono {
+    font-feature-settings: "tnum";
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', 'SourceCodePro', SFMono-Regular, Menlo, monospace;
+  }
+}
+
+@layer components {
+  /* Display typography (Stripe-style: light weight + tight tracking) */
+  .text-display-hero {
+    font-size: 3.5rem;
+    line-height: 1.03;
+    letter-spacing: -0.0875rem;
+    font-weight: 300;
+  }
+  .text-display-large {
+    font-size: 3rem;
+    line-height: 1.15;
+    letter-spacing: -0.06rem;
+    font-weight: 300;
+  }
+  .text-section {
+    font-size: 2rem;
+    line-height: 1.10;
+    letter-spacing: -0.04rem;
+    font-weight: 300;
+  }
+  .text-subhead-lg {
+    font-size: 1.625rem;
+    line-height: 1.12;
+    letter-spacing: -0.01625rem;
+    font-weight: 300;
+  }
+  .text-subhead {
+    font-size: 1.375rem;
+    line-height: 1.10;
+    letter-spacing: -0.01375rem;
+    font-weight: 300;
+  }
+  .text-body-lg {
+    font-size: 1.125rem;
+    line-height: 1.40;
+    font-weight: 300;
+  }
+
+  /* Stripe-style elevated card */
+  .card-elevated {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.5rem;
+    box-shadow: var(--shadow-elevated);
+  }
+  .card-soft {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.375rem;
+    box-shadow: var(--shadow-soft);
+  }
+
+  /* Sticky nav with blur */
+  .nav-blur {
+    background: hsl(0 0% 100% / 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-top-sticky);
+  }
+
+  /* Decorative dashed dropzone */
+  .dropzone-dashed {
+    border: 1px dashed hsl(var(--border-dashed));
+    background: linear-gradient(135deg, hsl(247 98% 99%), hsl(247 100% 97%));
+  }
+
+  /* Animated processing pulse dot */
+  .pulse-dot::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: currentColor;
+    opacity: 0.6;
+    animation: ping-slow 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+  @keyframes ping-slow {
+    75%, 100% { transform: scale(2.2); opacity: 0; }
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -800px 0; }
+    100% { background-position: 800px 0; }
+  }
+  .shimmer {
+    background: linear-gradient(90deg, hsl(var(--muted)) 0%, hsl(var(--accent)) 50%, hsl(var(--muted)) 100%);
+    background-size: 800px 100%;
+    animation: shimmer 1.6s infinite linear;
+  }
+
+  /* Hero gradient blob */
+  .hero-blob {
+    background: var(--gradient-ruby-magenta);
+    filter: blur(80px);
+    opacity: 0.18;
+  }
+}
