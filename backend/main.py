@@ -67,7 +67,8 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres import PostgresSaver
+from psycopg_pool import ConnectionPool
 
 from pipeline.graph import build_graph
 from pipeline.state import LoanApplicationState
@@ -97,11 +98,22 @@ api.add_middleware(
 
 
 # ---------------------------------------------------------------------------
-# LangGraph pipeline — compiled with a MemorySaver checkpointer so that
-# paused graphs (waiting for human review) survive across HTTP requests.
+# LangGraph pipeline — compiled with a PostgresSaver checkpointer so that
+# paused graphs survive across HTTP requests and container restarts.
 # ---------------------------------------------------------------------------
 
-checkpointer = MemorySaver()
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://crediflow_user:crediflow_password@localhost:5432/crediflow")
+
+# Initialize the checkpointer tables using a dedicated autocommit connection
+# This fixes the "CREATE INDEX CONCURRENTLY cannot run inside a transaction" error
+import psycopg
+with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+    PostgresSaver(conn).setup()
+
+# Create a connection pool for the actual application
+pool = ConnectionPool(conninfo=DATABASE_URL)
+checkpointer = PostgresSaver(pool)
+
 pipeline = build_graph(checkpointer=checkpointer)
 
 

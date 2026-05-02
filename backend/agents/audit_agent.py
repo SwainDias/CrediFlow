@@ -7,40 +7,39 @@ Responsibilities
 ----------------
 1. Receive all intermediate outputs from every preceding agent.
 2. Compose a complete audit record with full traceability.
-3. Append the record to the persistent audit log (JSON Lines).
+3. Append the record to the persistent audit log (PostgreSQL).
 4. Return the record so the frontend can display it.
-
-Agent interaction
------------------
-  Intake Agent  ┐
-  Risk Agent    ├──→ [ Audit Agent ] → audit_log.json + API response
-  Negotiation   ┘
-
-Log format
-----------
-Each entry is a JSON object appended to logs/audit_log.json (one per line,
-JSONL format) so the file can grow indefinitely without full re-parsing.
-
-Future extension points
-------------------------
-- Stream audit events to a message queue (Kafka / Redis Streams) for
-  real-time monitoring dashboards.
-- Sign each record with a hash chain (SHA-256 of previous entry) to
-  create an immutable tamper-evident audit trail.
-- Export to a compliance reporting system (SOC-2, Basel III).
 """
 
 import json
 import os
 from datetime import datetime, timezone
+import psycopg
+from psycopg.rows import dict_row
 
-# ---------------------------------------------------------------------------
-# Path to the audit log file
-# ---------------------------------------------------------------------------
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://crediflow_user:crediflow_password@localhost:5432/crediflow")
 
-BASE_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOG_PATH  = os.path.join(BASE_DIR, "logs", "audit_log.json")
+def _init_db():
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    applicant_name TEXT,
+                    loan_amount NUMERIC,
+                    annual_income NUMERIC,
+                    pan_number TEXT,
+                    record_data JSONB
+                )
+            """)
+        conn.commit()
 
+# Ensure table exists when the module is loaded
+try:
+    _init_db()
+except Exception as e:
+    print(f"Warning: Could not initialize audit_logs table: {e}")
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -52,21 +51,7 @@ def log_event(
     loan_terms:         dict,
 ) -> dict:
     """
-    Create and persist an audit log entry.
-
-    Parameters
-    ----------
-    parsed_application : dict
-        Output from the Intake Agent.
-    risk_assessment : dict
-        Output from the Risk Assessment Agent.
-    loan_terms : dict
-        Output from the Negotiation Agent.
-
-    Returns
-    -------
-    dict
-        The complete audit record (timestamp included).
+    Create and persist an audit log entry in PostgreSQL.
     """
 
     # ------------------------------------------------------------------
@@ -95,11 +80,31 @@ def log_event(
     }
 
     # ------------------------------------------------------------------
-    # Persist — append as a new line (JSONL)
+    # Persist — Insert into PostgreSQL
     # ------------------------------------------------------------------
-    os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
-    with open(LOG_PATH, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    try:
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO audit_logs (
+                        timestamp, applicant_name, loan_amount, annual_income, pan_number, record_data
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s
+                    )
+                    """,
+                    (
+                        record["timestamp"],
+                        record["application_summary"]["applicant_name"],
+                        record["application_summary"]["loan_amount"],
+                        record["application_summary"]["annual_income"],
+                        record["application_summary"]["pan_number"],
+                        json.dumps(record, ensure_ascii=False)
+                    )
+                )
+            conn.commit()
+    except Exception as e:
+        print(f"Error persisting audit log to DB: {e}")
 
     return record
 
@@ -110,8 +115,7 @@ def log_event(
 
 def _sanitise(application: dict) -> dict:
     """
-    Remove bulky raw text from the log to keep file size manageable.
-    The raw OCR text is useful for debugging but not for auditors.
+    Remove bulky raw text from the log to keep size manageable.
     """
     cleaned = {k: v for k, v in application.items() if k != "raw_text"}
     return cleaned
@@ -119,18 +123,19 @@ def _sanitise(application: dict) -> dict:
 
 def get_all_logs() -> list:
     """
-    Read and return all audit log entries as a list of dicts.
-    Returns an empty list if the log file does not exist yet.
+    Read and return all audit log entries from PostgreSQL.
     """
-    if not os.path.exists(LOG_PATH):
-        return []
     records = []
-    with open(LOG_PATH, "r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if line:
-                try:
-                    records.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
+    try:
+        with psycopg.connect(DATABASE_URL, row_factory=dict_row) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT record_data FROM audit_logs ORDER BY timestamp ASC")
+                for row in cur.fetchall():
+                    if isinstance(row["record_data"], str):
+                        records.append(json.loads(row["record_data"]))
+                    else:
+                        records.append(row["record_data"])
+    except Exception as e:
+        print(f"Error reading audit logs from DB: {e}")
     return records
+

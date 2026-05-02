@@ -13,3 +13,7 @@ Pillow
 langgraph>=0.2.0
 langchain-core>=0.3.0
 langgraph-checkpoint>=2.0.0
+langgraph-checkpoint-postgres>=2.0.0
+psycopg[binary]
+asyncpg
+SQLAlchemy
