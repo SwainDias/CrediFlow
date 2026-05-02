@@ -10,3 +10,6 @@ numpy
 shap
 joblib
 Pillow
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langgraph-checkpoint>=2.0.0

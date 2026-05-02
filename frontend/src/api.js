@@ -50,4 +50,23 @@ export async function fetchAuditLogs() {
   return response.data;
 }
 
+/**
+ * resumeReview
+ * ------------
+ * POST the human reviewer's decision back to the paused LangGraph pipeline.
+ *
+ * @param {string} threadId - The unique ID of the paused graph.
+ * @param {string} decision - 'approve', 'reject', or 'escalate'.
+ * @param {string} comment - Optional reviewer comment.
+ * @returns {Promise<object>} The final pipeline response.
+ */
+export async function resumeReview(threadId, decision, comment = "") {
+  const response = await api.post("/resume-review", {
+    thread_id: threadId,
+    human_decision: decision,
+    human_comment: comment,
+  });
+  return response.data;
+}
+
 export default api;

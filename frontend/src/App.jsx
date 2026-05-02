@@ -7,19 +7,23 @@
  *   1. UploadForm      → user selects a document
  *   2. processLoan()   → calls POST /process-loan
  *   3. ParsedData      → shows extracted fields
- *   4. RiskResult      → shows risk probability + chart
- *   5. LoanTerms       → shows proposed terms
- *   6. AuditLog        → shows full audit trace
+ *   4. KYCResult       → shows verification outcome
+ *   5. RiskResult      → shows risk probability + chart
+ *   6. HumanReviewPanel→ shows if pipeline paused for manual review
+ *   7. LoanTerms       → shows proposed terms (after review/fast-track)
+ *   8. AuditLog        → shows full audit trace
  *
  * State is held here so that every child receives clean props.
  */
 
 import React, { useState } from "react";
-import { processLoan } from "./api";
+import { processLoan, resumeReview } from "./api";
 
 import UploadForm  from "./components/UploadForm.jsx";
 import ParsedData  from "./components/ParsedData.jsx";
+import KYCResult   from "./components/KYCResult.jsx";
 import RiskResult  from "./components/RiskResult.jsx";
+import HumanReviewPanel from "./components/HumanReviewPanel.jsx";
 import LoanTerms   from "./components/LoanTerms.jsx";
 import AuditLog    from "./components/AuditLog.jsx";
 
@@ -53,6 +57,32 @@ export default function App() {
     }
   }
 
+  /**
+   * handleResumeReview
+   * ------------------
+   * Called by HumanReviewPanel when the reviewer submits a decision.
+   * Resumes the paused LangGraph pipeline.
+   */
+  async function handleResumeReview(threadId, decision, comment) {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await resumeReview(threadId, decision, comment);
+      setResult(data);
+    } catch (err) {
+      const msg =
+        err?.response?.data?.detail ||
+        err?.message ||
+        "Failed to resume review.";
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Helper to extract state whether from a completed run or a paused current_state
+  const currentState = result?.current_state || result || {};
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
 
@@ -69,9 +99,11 @@ export default function App() {
         <div className="mt-4 flex justify-center gap-3 text-sm text-indigo-400">
           <span className="bg-white border border-indigo-200 rounded-full px-3 py-1">OCR Intake</span>
           <span>→</span>
+          <span className="bg-white border border-indigo-200 rounded-full px-3 py-1">KYC Check</span>
+          <span>→</span>
           <span className="bg-white border border-indigo-200 rounded-full px-3 py-1">Risk AI</span>
           <span>→</span>
-          <span className="bg-white border border-indigo-200 rounded-full px-3 py-1">Negotiation</span>
+          <span className="bg-white border border-indigo-200 rounded-full px-3 py-1">Human-in-the-loop</span>
           <span>→</span>
           <span className="bg-white border border-indigo-200 rounded-full px-3 py-1">Audit</span>
         </div>
@@ -106,23 +138,44 @@ export default function App() {
         {result && (
           <>
             {/* Step 2 — Parsed fields */}
-            <ParsedData data={result.parsed_application} />
+            {currentState.parsed_application && (
+              <ParsedData data={currentState.parsed_application} />
+            )}
 
-            {/* Step 3 — Risk assessment */}
-            <RiskResult data={result.risk_assessment} />
+            {/* Step 3 — KYC Result */}
+            {currentState.kyc_result && (
+              <KYCResult data={currentState.kyc_result} />
+            )}
 
-            {/* Step 4 — Loan terms */}
-            <LoanTerms data={result.loan_terms} />
+            {/* Step 4 — Risk assessment */}
+            {currentState.risk_assessment && currentState.risk_assessment.risk_label !== "N/A" && (
+              <RiskResult data={currentState.risk_assessment} />
+            )}
+            
+            {/* Step 4.5 — Human Review Pause (if applicable) */}
+            {result.status === "awaiting_human_review" && (
+              <HumanReviewPanel 
+                threadId={result.thread_id} 
+                onSubmit={handleResumeReview} 
+                loading={loading}
+              />
+            )}
 
-            {/* Step 5 — Audit log */}
-            <AuditLog data={result.audit_record} />
+            {/* Step 5 & 6 — Only show Terms and Audit if NOT awaiting human review and NOT rejected */}
+            {result.status !== "awaiting_human_review" && result.status !== "rejected" && currentState.loan_terms && (
+              <LoanTerms data={currentState.loan_terms} />
+            )}
+
+            {result.status !== "awaiting_human_review" && currentState.audit_record && (
+              <AuditLog data={currentState.audit_record} />
+            )}
           </>
         )}
       </main>
 
       {/* Footer */}
       <footer className="mt-16 text-center text-xs text-indigo-300">
-        CrediFlow v1.0 — Prototype. Not for production lending decisions.
+        CrediFlow v2.0 — Prototype. Powered by LangGraph.
       </footer>
     </div>
   );
