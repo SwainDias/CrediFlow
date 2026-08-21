@@ -40,16 +40,27 @@ def extract_name(text: str) -> Optional[str]:
     Extract applicant name using spaCy Named Entity Recognition.
     Falls back to a 'Name:' keyword line search if spaCy is unavailable.
     """
+    # ── spaCy NER path ─────────────────────────────────────────────────
+    # Filter out entities that bleed into adjacent field labels.
+    _non_name_words = {"date", "birth", "dob", "income", "pan", "aadhaar",
+                       "loan", "amount", "purpose", "number", "address",
+                       "employment", "financial", "information", "applicant"}
     nlp = _get_nlp()
     if nlp:
         doc = nlp(text[:2000])  # limit to first 2 000 chars for speed
-        persons = [ent.text for ent in doc.ents if ent.label_ == "PERSON"]
-        if persons:
-            return persons[0]
+        for ent in doc.ents:
+            if ent.label_ == "PERSON":
+                words_lower = {w.lower() for w in ent.text.split()}
+                if not words_lower & _non_name_words:
+                    return ent.text
 
-    # Keyword fallback
-    match = re.search(r"(?:name|applicant)[:\s]+([A-Z][a-z]+(?: [A-Z][a-z]+)+)", text, re.IGNORECASE)
-    return match.group(1) if match else None
+    # Keyword fallback — search line by line so we don't bleed into the next field
+    for line in text.splitlines():
+        if re.search(r'(?:full\s+name|applicant\s+name|name)[:\s]', line, re.IGNORECASE):
+            m = re.search(r'(?:full\s+name|applicant\s+name|name)[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})', line, re.IGNORECASE)
+            if m:
+                return m.group(1).strip()
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -151,4 +162,34 @@ def extract_aadhaar(text: str) -> Optional[str]:
     Accepts formats:  XXXX XXXX XXXX  |  XXXXXXXXXXXX  |  XXXX-XXXX-XXXX
     """
     m = re.search(r"\b(\d{4}[\s\-]?\d{4}[\s\-]?\d{4})\b", text)
+    return m.group(1) if m else None
+
+
+# ---------------------------------------------------------------------------
+# Existing Debt
+# ---------------------------------------------------------------------------
+
+def extract_existing_debt(text: str) -> Optional[str]:
+    """
+    Extract existing / outstanding debt amount.
+    Looks for lines containing 'existing debt', 'outstanding debt', or 'current debt'.
+    """
+    pattern = r"(?:existing\s+debt|outstanding\s+debt|current\s+debt)[^\d₹Rs]*(?:₹|Rs\.?|INR)?\s*([\d,]+(?:\.\d+)?)"
+    m = re.search(pattern, text, re.IGNORECASE)
+    if m:
+        return m.group(1).replace(",", "")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Employment Years
+# ---------------------------------------------------------------------------
+
+def extract_employment_years(text: str) -> Optional[str]:
+    """
+    Extract years of employment from the text.
+    Looks for lines containing 'employment years', 'years employed', 'work experience'.
+    """
+    pattern = r"(?:employment\s+years?|years?\s+employed|work\s+experience)[:\s]*(\d+(?:\.\d+)?)"
+    m = re.search(pattern, text, re.IGNORECASE)
     return m.group(1) if m else None

@@ -89,14 +89,14 @@ function KycTab({ kyc }) {
 
 function RiskTab({ risk }) {
   const riskLabel = risk.risk_label || "N/A";
-  const riskProbability = Number.isFinite(Number(risk.risk_probability)) ? Number(risk.risk_probability) : null;
-  const riskScore = riskProbability === null ? null : Math.round((1 - riskProbability) * 100);
+  const riskProbability = Number.isFinite(Number((risk.risk_probability))) ? Number(risk.risk_probability) : null;
+  const riskScore = riskProbability === null ? null : Math.round((riskProbability) * 100);
   const probabilityData = riskProbability === null
     ? []
     : [
-        { name: "Default Probability", value: Number((riskProbability * 100).toFixed(2)), color: "hsl(var(--destructive))" },
-        { name: "Safe Margin", value: Number(((1 - riskProbability) * 100).toFixed(2)), color: "hsl(var(--success))" },
-      ];
+      { name: "Default Probability", value: Number((riskProbability * 100).toFixed(2)), color: "hsl(var(--destructive))" },
+      { name: "Safe Margin", value: Number(((1 - riskProbability) * 100).toFixed(2)), color: "hsl(var(--success))" },
+    ];
   const featureData = Object.entries(risk.feature_importance || {})
     .map(([key, value]) => ({
       feature: key.replace(/_/g, " "),

@@ -31,6 +31,8 @@ from utils.extraction_utils import (
     extract_loan_purpose,
     extract_pan,
     extract_aadhaar,
+    extract_existing_debt,
+    extract_employment_years,
 )
 
 
@@ -70,6 +72,8 @@ def process_document(file_bytes: bytes, content_type: str) -> dict:
     loan_purpose  = extract_loan_purpose(raw_text)
     pan_number    = extract_pan(raw_text)
     aadhaar_number = extract_aadhaar(raw_text)
+    existing_debt  = extract_existing_debt(raw_text)
+    employment_years = extract_employment_years(raw_text)
 
     # ------------------------------------------------------------------
     # Step 3 — Confidence score
@@ -77,18 +81,20 @@ def process_document(file_bytes: bytes, content_type: str) -> dict:
     # Replace with a calibrated probability model in production.
     # ------------------------------------------------------------------
     fields = [name, dob, annual_income, loan_amount, loan_purpose,
-              pan_number, aadhaar_number]
+              pan_number, aadhaar_number, existing_debt]
     extracted_count = sum(1 for f in fields if f is not None)
     confidence = round(extracted_count / len(fields), 2)
 
     return {
-        "name":           name           or "Not found",
-        "dob":            dob            or "Not found",
-        "annual_income":  annual_income  or "Not found",
-        "loan_amount":    loan_amount    or "Not found",
-        "loan_purpose":   loan_purpose   or "Not found",
-        "pan_number":     pan_number     or "Not found",
-        "aadhaar_number": aadhaar_number or "Not found",
-        "confidence":     confidence,
-        "raw_text":       raw_text,       # passed to risk agent / audit
+        "name":            name             or "Not found",
+        "dob":             dob              or "Not found",
+        "annual_income":   annual_income    or "Not found",
+        "loan_amount":     loan_amount      or "Not found",
+        "loan_purpose":    loan_purpose     or "Not found",
+        "pan_number":      pan_number       or "Not found",
+        "aadhaar_number":  aadhaar_number   or "Not found",
+        "existing_debt":   existing_debt    or "Not found",
+        "employment_years": employment_years or "Not found",
+        "confidence":      confidence,
+        "raw_text":        raw_text,
     }

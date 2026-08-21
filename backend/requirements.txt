@@ -9,6 +9,7 @@ pandas
 numpy
 shap
 joblib
+lightgbm
 Pillow
 langgraph>=0.2.0
 langchain-core>=0.3.0
