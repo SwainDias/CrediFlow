@@ -30,15 +30,15 @@ LangGraph pipeline
   UploadForm (UI)
        │
        ▼  multipart/form-data
-  [ Intake Agent ]       ← OCR + field extraction
+  [ Intake Agent ]       ← OCR + regex + LLM extraction (cross-checked)
        │
        ▼
-  [ Verification Agent ] ← KYC (PAN + Aadhaar validation)
+  [ Verification Agent ] ← KYC (PAN + Aadhaar + age) + LLM explanation
        │
        ├── KYC failed ──────────────────────── [ Audit Agent ] → rejected
        │
        ▼  KYC passed
-  [ Risk Agent ]         ← ML risk model + explainability
+  [ Risk Agent ]         ← ML risk model + SHAP + LLM explanation
        │
        ├── Low risk (fast-track) ──────────── [ Negotiation Agent ]
        │                                              │
@@ -73,6 +73,7 @@ from psycopg_pool import ConnectionPool
 from pipeline.graph import build_graph
 from pipeline.state import LoanApplicationState
 from agents.audit_agent import get_all_logs
+from utils.llm_client import llm_status
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -124,7 +125,12 @@ pipeline = build_graph(checkpointer=checkpointer)
 @api.get("/health", tags=["System"])
 def health():
     """Liveness probe — returns OK when the server is running."""
-    return {"status": "ok", "service": "CrediFlow API", "pipeline": "LangGraph v2"}
+    return {
+        "status": "ok",
+        "service": "CrediFlow API",
+        "pipeline": "LangGraph v2",
+        "llm": llm_status(),      # shows whether Groq is configured (never shows the key)
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +158,66 @@ def _serialize_state(state: dict) -> dict:
             cleaned[key] = f"<{len(value)} bytes>" if value else None
         else:
             cleaned[key] = value
+    cleaned["ai_insights"] = _ai_insights(state)
     return cleaned
+
+
+def _ai_insights(state: dict) -> dict:
+    """Collect everything the LLM layer produced into one object for the frontend."""
+    kyc = state.get("kyc_result") or {}
+    trace = state.get("llm_trace") or []
+    used = [t for t in trace if t.get("used")]
+    ok = [t for t in used if t.get("ok")]
+    return {
+        "intake":       state.get("intake_insights"),
+        "kyc": {k: kyc.get(k) for k in (
+            "summary", "reasons", "concern_level", "recommended_action",
+            "applicant_message", "warnings", "explained_by", "pan_type", "aadhaar_qr")},
+        "risk":         state.get("risk_insights"),
+        "shap_values":  state.get("shap_values", []),
+        "counterfactuals": state.get("counterfactuals", []),
+        "negotiation":  state.get("negotiation_insights"),
+        "case_summary": state.get("case_summary"),
+        "fraud_flags":  state.get("fraud_flags", []),
+        "llm": {
+            "calls_attempted": len(trace),
+            "calls_succeeded": len(ok),
+            "total_latency_ms": sum(int(t.get("latency_ms") or 0) for t in used),
+            "models": sorted({t.get("model") for t in ok if t.get("model")}),
+            "calls": trace,
+        },
+    }
+
+
+def _build_result(final_state: dict, thread_id: str, include_human: bool = False) -> dict:
+    """Compose the JSON returned when the pipeline has finished."""
+    parsed = final_state.get("parsed_application", {})
+    offers = final_state.get("loan_offers", []) or []
+    loan_terms = offers[0] if offers else {}
+
+    risk_assessment = {
+        "risk_probability":   final_state.get("risk_probability", 0.0),
+        "risk_label":         final_state.get("risk_label", "N/A"),
+        "feature_importance": final_state.get("feature_importance", {}),
+        "input_features":     final_state.get("risk_input_features", {}),
+    }
+    clean_application = {k: v for k, v in parsed.items() if k != "raw_text"}
+
+    result = {
+        "status":             final_state.get("pipeline_status", "completed"),
+        "parsed_application": clean_application,
+        "risk_assessment":    risk_assessment,
+        "loan_terms":         loan_terms,
+        "alternative_offers": offers[1:],
+        "audit_record":       final_state.get("audit_record", {}),
+        "kyc_result":         final_state.get("kyc_result"),
+        "ai_insights":        _ai_insights(final_state),
+        "thread_id":          thread_id,
+    }
+    if include_human:
+        result["human_decision"] = final_state.get("human_decision")
+        result["human_comment"] = final_state.get("human_comment")
+    return result
 
 
 @api.post("/process-loan", tags=["Pipeline"])
@@ -163,7 +228,7 @@ async def process_loan(file: UploadFile = File(...)):
     1. Intake Agent       — OCR + field extraction
     2. Verification Agent — KYC (PAN, Aadhaar, name cross-check)
     3. Risk Agent         — ML risk prediction + feature importance
-    4. Negotiation Agent  — Rule-based loan term proposal
+    4. Negotiation Agent  — LLM-planned offers checked by guard-rails
     5. Audit Agent        — Persist & return full trace record
 
     If the application is flagged for human review (borderline/high risk),
@@ -236,30 +301,7 @@ async def process_loan(file: UploadFile = File(...)):
     # ------------------------------------------------------------------
     # Pipeline completed fully — compose backward-compatible response
     # ------------------------------------------------------------------
-    parsed      = final_state.get("parsed_application", {})
-    offers      = final_state.get("loan_offers", [])
-    loan_terms  = offers[0] if offers else {}
-
-    # Build risk_assessment dict (backward-compat with v1 API shape)
-    risk_assessment = {
-        "risk_probability":   final_state.get("risk_probability", 0.0),
-        "risk_label":         final_state.get("risk_label", "N/A"),
-        "feature_importance": final_state.get("feature_importance", {}),
-        "input_features":     {},
-    }
-
-    clean_application = {k: v for k, v in parsed.items()
-                         if k != "raw_text"}
-
-    return {
-        "status":             final_state.get("pipeline_status", "completed"),
-        "parsed_application": clean_application,
-        "risk_assessment":    risk_assessment,
-        "loan_terms":         loan_terms,
-        "audit_record":       final_state.get("audit_record", {}),
-        "kyc_result":         final_state.get("kyc_result"),
-        "thread_id":          thread_id,
-    }
+    return _build_result(final_state, thread_id)
 
 
 # ---------------------------------------------------------------------------
@@ -336,31 +378,7 @@ async def resume_review(body: ResumeReviewRequest):
     # ------------------------------------------------------------------
     # Compose response
     # ------------------------------------------------------------------
-    parsed      = final_state.get("parsed_application", {})
-    offers      = final_state.get("loan_offers", [])
-    loan_terms  = offers[0] if offers else {}
-
-    risk_assessment = {
-        "risk_probability":   final_state.get("risk_probability", 0.0),
-        "risk_label":         final_state.get("risk_label", "N/A"),
-        "feature_importance": final_state.get("feature_importance", {}),
-        "input_features":     {},
-    }
-
-    clean_application = {k: v for k, v in parsed.items()
-                         if k != "raw_text"}
-
-    return {
-        "status":             final_state.get("pipeline_status", "completed"),
-        "parsed_application": clean_application,
-        "risk_assessment":    risk_assessment,
-        "loan_terms":         loan_terms,
-        "audit_record":       final_state.get("audit_record", {}),
-        "kyc_result":         final_state.get("kyc_result"),
-        "human_decision":     final_state.get("human_decision"),
-        "human_comment":      final_state.get("human_comment"),
-        "thread_id":          body.thread_id,
-    }
+    return _build_result(final_state, body.thread_id, include_human=True)
 
 
 # ---------------------------------------------------------------------------

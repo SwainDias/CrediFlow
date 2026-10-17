@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ArrowLeft, Download, Send, ShieldCheck, ShieldAlert, FileText, Layers } from "lucide-react";
+import { ArrowLeft, Download, Send, ShieldCheck, ShieldAlert, FileText, Layers, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import StatusBadge from "@/components/StatusBadge";
+import AIInsights from "@/components/AIInsights";
+import { riskScoreFromProbability, normalizeImportance } from "@/lib/riskScore";
 import {
   BarChart,
   Bar,
@@ -22,9 +24,10 @@ const TABS = [
   { id: "kyc", label: "KYC Result", icon: ShieldCheck },
   { id: "risk", label: "Risk Assessment", icon: ShieldAlert },
   { id: "terms", label: "Loan Terms", icon: Layers },
+  { id: "ai", label: "AI Insights", icon: Sparkles },
 ];
 
-function fmtMoney(n) { return "$" + Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 }); }
+function fmtMoney(n) { return "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 }); }
 function Field({ label, children }) {
   return (
     <div>
@@ -89,27 +92,29 @@ function KycTab({ kyc }) {
 
 function RiskTab({ risk }) {
   const riskLabel = risk.risk_label || "N/A";
-  const riskProbability = Number.isFinite(Number((risk.risk_probability))) ? Number(risk.risk_probability) : null;
-  const riskScore = riskProbability === null ? null : Math.round((riskProbability) * 100);
-  const probabilityData = riskProbability === null
+  // No risk assessment exists when the application was stopped before the risk step (for example KYC failed)
+  const hasAssessment = riskLabel !== "N/A" && risk.risk_probability !== null && risk.risk_probability !== undefined;
+  const riskProbability = hasAssessment && Number.isFinite(Number(risk.risk_probability)) ? Number(risk.risk_probability) : null;
+  const riskScore = riskScoreFromProbability(riskProbability);
+  // The donut follows the 0-100 risk SCORE: red = risk, green = the rest of the scale
+  const probabilityData = riskScore === null
     ? []
     : [
-      { name: "Default Probability", value: Number((riskProbability * 100).toFixed(2)), color: "hsl(var(--destructive))" },
-      { name: "Safe Margin", value: Number(((1 - riskProbability) * 100).toFixed(2)), color: "hsl(var(--success))" },
+      { name: "Risk score", value: riskScore, color: "hsl(var(--destructive))" },
+      { name: "Remaining to 100", value: 100 - riskScore, color: "hsl(var(--success))" },
     ];
-  const featureData = Object.entries(risk.feature_importance || {})
-    .map(([key, value]) => ({
-      feature: key.replace(/_/g, " "),
-      value: Number((Number(value) * 100).toFixed(2)),
-    }))
-    .sort((a, b) => b.value - a.value);
+  const featureData = normalizeImportance(risk.feature_importance);
 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-md border border-border p-4">
           <p className="font-mono text-[11px] uppercase tracking-wider text-body">Risk score</p>
-          <p className="mt-1 text-[40px] font-light leading-none text-heading tnum">{riskScore === null ? "—" : riskScore}</p>
+          <p className="mt-1 text-[40px] font-light leading-none text-heading tnum">
+            {riskScore === null ? "—" : riskScore}
+            {riskScore !== null && <span className="ml-1 text-base text-body">/ 100</span>}
+          </p>
+          <p className="mt-2 text-[11px] text-body">0-34 Low · 35-70 Medium · 71-100 High</p>
         </div>
         <div className="rounded-md border border-border p-4">
           <p className="font-mono text-[11px] uppercase tracking-wider text-body">Risk label</p>
@@ -125,8 +130,8 @@ function RiskTab({ risk }) {
 
       <div className="grid gap-4 lg:grid-cols-[1fr,1.4fr]">
         <div className="rounded-md border border-border p-4">
-          <p className="mb-3 text-sm text-label">Probability split</p>
-          <div className="h-56">
+          <p className="mb-3 text-sm text-label">Risk score split (out of 100)</p>
+          <div className="relative h-80">
             {probabilityData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -137,19 +142,25 @@ function RiskTab({ risk }) {
                   </Pie>
                   <Tooltip
                     contentStyle={{ borderColor: "hsl(var(--border))", borderRadius: 8 }}
-                    formatter={(value) => [`${Number(value).toFixed(1)}%`, ""]}
+                    formatter={(value, name) => [`${Number(value).toFixed(0)} pts`, name]}
                   />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-full items-center justify-center text-sm text-body">No probability data.</div>
+              <div className="flex h-full items-center justify-center text-sm text-body">No risk score available.</div>
+            )}
+            {riskScore !== null && (
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-4xl font-light text-heading tnum">{riskScore}</span>
+                <span className="text-xs text-body">/ 100</span>
+              </div>
             )}
           </div>
         </div>
 
         <div className="rounded-md border border-border p-4">
-          <p className="mb-3 text-sm text-label">Feature importance</p>
-          <div className="h-56">
+          <p className="mb-3 text-sm text-label">Feature importance (model-wide, same for every applicant)</p>
+          <div className="h-80">
             {featureData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={featureData} layout="vertical" margin={{ top: 0, right: 16, left: 10, bottom: 0 }}>
@@ -158,7 +169,8 @@ function RiskTab({ risk }) {
                   <YAxis
                     type="category"
                     dataKey="feature"
-                    width={120}
+                    width={130}
+                    interval={0}
                     tick={{ fill: "hsl(var(--body))", fontSize: 12 }}
                     axisLine={false}
                     tickLine={false}
@@ -180,18 +192,64 @@ function RiskTab({ risk }) {
   );
 }
 
-function TermsTab({ terms }) {
+function OfferCard({ offer, title }) {
+  return (
+    <div className="space-y-5">
+      {title && <p className="text-sm text-heading">{title}</p>}
+      <div className="grid gap-x-10 gap-y-5 sm:grid-cols-2 md:grid-cols-3">
+        <Field label="Decision">{offer.decision || "—"}</Field>
+        <Field label="Amount offered">{offer.loan_amount_offered != null ? fmtMoney(offer.loan_amount_offered) : "—"}</Field>
+        <Field label="Interest rate">{offer.recommended_interest_rate != null ? `${offer.recommended_interest_rate}%` : "—"}</Field>
+        <Field label="Tenor">{offer.tenor_months != null ? `${offer.tenor_months} months` : "—"}</Field>
+        <Field label="Monthly EMI">{offer.emi_monthly != null ? fmtMoney(offer.emi_monthly) : "—"}</Field>
+        <Field label="EMI burden">{offer.emi_to_income_ratio != null ? `${Math.round(offer.emi_to_income_ratio * 100)}% of monthly income` : "—"}</Field>
+        <Field label="Collateral">{offer.collateral_required || "—"}</Field>
+        <Field label="Guarantor">{offer.guarantor_required ? "Required" : "Not required"}</Field>
+      </div>
+      {offer.collateral_options?.length > 0 && (
+        <div className="rounded-md border border-border p-4">
+          <p className="font-mono text-[11px] uppercase tracking-wider text-body">Suggested collateral / guarantee</p>
+          <ul className="mt-2 space-y-1.5 text-sm text-label">
+            {offer.collateral_options.map((c) => (
+              <li key={c.type}>
+                <span className="text-heading">{c.type}</span>
+                {c.reason ? <span> — {c.reason}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {offer.conditions?.length > 0 && (
+        <div className="rounded-md border border-border p-4">
+          <p className="font-mono text-[11px] uppercase tracking-wider text-body">Conditions</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-label">
+            {offer.conditions.map((c, i) => <li key={i}>{c}</li>)}
+          </ul>
+        </div>
+      )}
+      {offer.notes && <p className="text-sm text-label">{offer.notes}</p>}
+    </div>
+  );
+}
+
+function TermsTab({ terms, alternatives = [] }) {
   const isEmpty = !terms || Object.keys(terms).length === 0;
   if (isEmpty) {
     return <p className="text-sm text-body">Loan terms are not available for this application.</p>;
   }
   return (
-    <div className="grid gap-x-10 gap-y-5 sm:grid-cols-2 md:grid-cols-3">
-      <Field label="Decision">{terms.decision || "—"}</Field>
-      <Field label="Interest rate">{terms.recommended_interest_rate != null ? `${terms.recommended_interest_rate}%` : "—"}</Field>
-      <Field label="Tenor">{terms.tenor_months != null ? `${terms.tenor_months} months` : "—"}</Field>
-      <Field label="Collateral">{terms.collateral_required || "—"}</Field>
-      <Field label="Notes">{terms.notes || "—"}</Field>
+    <div className="space-y-8">
+      <OfferCard offer={terms} title={terms.name ? `Recommended offer — ${terms.name}` : "Recommended offer"} />
+      {alternatives.length > 0 && (
+        <div className="space-y-6 border-t border-border pt-6">
+          <p className="font-mono text-[11px] uppercase tracking-wider text-body">Alternative offers</p>
+          {alternatives.map((alt) => (
+            <div key={alt.scenario_id} className="rounded-md border border-border p-4">
+              <OfferCard offer={alt} title={alt.name} />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -210,6 +268,8 @@ export default function ResultsPage() {
     feature_importance: pipelineState?.feature_importance,
   };
   const terms = pipelineState?.loan_terms || {};
+  const alternatives = pipelineState?.alternative_offers || [];
+  const aiInsights = pipelineState?.ai_insights;
 
   useEffect(() => {
     if (!result) navigate("/upload", { replace: true });
@@ -279,7 +339,8 @@ export default function ResultsPage() {
           {tab === "parsed" && <ParsedDataTab data={parsed} />}
           {tab === "kyc" && <KycTab kyc={kyc} />}
           {tab === "risk" && <RiskTab risk={risk} />}
-          {tab === "terms" && <TermsTab terms={terms} />}
+          {tab === "terms" && <TermsTab terms={terms} alternatives={alternatives} />}
+          {tab === "ai" && <AIInsights insights={aiInsights} />}
         </div>
       </div>
 

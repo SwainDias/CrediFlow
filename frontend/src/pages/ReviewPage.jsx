@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import { Check, X, AlertTriangle, ArrowLeft } from "lucide-react";
 import { resumeReview } from "@/api/client";
 import StatusBadge from "@/components/StatusBadge";
+import AIInsights from "@/components/AIInsights";
+import { riskScoreFromProbability, normalizeImportance } from "@/lib/riskScore";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -48,6 +50,7 @@ export default function ReviewPage() {
   const kycStatus = kycPassed === null ? "unknown" : kycPassed ? "verified" : "failed";
   const riskLabel = risk.risk_label || "N/A";
   const riskProbability = Number.isFinite(Number(risk.risk_probability)) ? Number(risk.risk_probability) : null;
+  const riskScore = riskScoreFromProbability(riskProbability);
 
   const submit = async () => {
     setSubmitting(true);
@@ -77,6 +80,11 @@ export default function ReviewPage() {
         Confirm or override the AI's recommendation. Your decision is logged with the audit trail.
       </p>
 
+      {/* AI brief for the reviewer */}
+      <div className="mt-8">
+        <AIInsights insights={pipelineState?.ai_insights} compact />
+      </div>
+
       <div className="mt-8 grid gap-6 lg:grid-cols-[1.4fr,1fr]">
         {/* Summary */}
         <div className="card-soft p-6">
@@ -105,6 +113,10 @@ export default function ReviewPage() {
               <dd className="mt-1 text-heading">{riskLabel}</dd>
             </div>
             <div>
+              <dt className="font-mono text-[11px] uppercase tracking-wider text-body">Risk score</dt>
+              <dd className="mt-1 text-heading tnum">{riskScore === null ? "—" : `${riskScore} / 100`}</dd>
+            </div>
+            <div>
               <dt className="font-mono text-[11px] uppercase tracking-wider text-body">Risk probability</dt>
               <dd className="mt-1 text-heading tnum">{riskProbability === null ? "—" : `${(riskProbability * 100).toFixed(1)}%`}</dd>
             </div>
@@ -113,10 +125,10 @@ export default function ReviewPage() {
           <div className="mt-6 rounded-md border border-border bg-muted/40 p-4">
             <p className="font-mono text-[11px] uppercase tracking-wider text-body">Top factors</p>
             <ul className="mt-2 space-y-1.5 text-sm text-label">
-              {Object.entries(risk.feature_importance || {}).slice(0, 4).map(([label, value]) => (
-                <li key={label} className="flex justify-between gap-3">
-                  <span>{label.replace(/_/g, " ")}</span>
-                  <span className="tnum text-body">{(Number(value) * 100).toFixed(1)}%</span>
+              {normalizeImportance(risk.feature_importance).slice(0, 4).map(({ feature, value }) => (
+                <li key={feature} className="flex justify-between gap-3">
+                  <span>{feature}</span>
+                  <span className="tnum text-body">{value.toFixed(1)}%</span>
                 </li>
               ))}
               {Object.keys(risk.feature_importance || {}).length === 0 && (

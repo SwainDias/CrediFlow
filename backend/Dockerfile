@@ -1,12 +1,13 @@
 FROM python:3.12-slim
 
-# Install system dependencies for OCR and PDF processing
+# Install system dependencies for OCR, PDF processing, LightGBM and Aadhaar-QR reading
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     poppler-utils \
     libgl1 \
     libglib2.0-0 \
     libgomp1 \
+    libzbar0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

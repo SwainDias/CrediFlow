@@ -36,6 +36,10 @@ Field groups
     │  audit_record                                                  │
     ├── Human Review ───────────────────────────────────────────────┤
     │  human_decision, human_comment                                 │
+    ├── AI layer (LLM) ─────────────────────────────────────────────┤
+    │  intake_insights, risk_input_features, risk_insights,         │
+    │  negotiation_insights, case_summary, llm_trace,               │
+    │  kyc_flagged_for_review                                        │
     └── Routing metadata ───────────────────────────────────────────┘
       rejection_reason, needs_human_review, pipeline_status
 """
@@ -55,6 +59,16 @@ class KYCResult(TypedDict, total=False):
     aadhaar_valid: bool
     name_match:    bool
     details:       str
+    age_ok:        bool
+    warnings:      List[str]
+    pan_type:      Optional[str]
+    aadhaar_qr:    Dict[str, Any]
+    summary:       str                  # LLM (or rule) explanation
+    reasons:       List[str]
+    concern_level: str                  # "low" | "medium" | "high"
+    recommended_action: str             # "proceed" | "manual_review" | "reject"
+    applicant_message: str
+    explained_by:  str                  # "llm" | "rules"
 
 
 class FraudFlag(TypedDict, total=False):
@@ -131,6 +145,15 @@ class LoanApplicationState(TypedDict, total=False):
     # ── Human Review ──────────────────────────────────────────────────
     human_decision:          str                  # "approve" | "reject" | "escalate"
     human_comment:           str                  # free-text reviewer comment
+
+    # ── AI layer (added when the agents became LLM-powered) ───────────
+    intake_insights:         Dict[str, Any]       # document type, field sources/confidence, notes
+    kyc_flagged_for_review:  bool                 # KYC passed but something looks worrying
+    risk_input_features:     Dict[str, Any]       # exact feature vector sent to the ML model
+    risk_insights:           Dict[str, Any]       # LLM explanation + limitations + data gaps
+    negotiation_insights:    Dict[str, Any]       # rationale, tips, scenarios, guard-rail log
+    case_summary:            Dict[str, Any]       # audit memo + consistency checks
+    llm_trace:               List[Dict[str, Any]] # one entry per LLM call (model, latency, tokens)
 
     # ── Pipeline Routing / Meta ───────────────────────────────────────
     rejection_reason:        str                  # set when KYC or fraud fails
